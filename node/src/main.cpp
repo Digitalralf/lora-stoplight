@@ -12,6 +12,7 @@ static const uint8_t fridgePin = 2; //io2
 void setup() 
 {
   StartStoplight(greenPin,yellowPin,redPin,fridgePin);
+  //SetStopLightFlicker(true, true ,true, 500);
 }
 
 void loop() 
