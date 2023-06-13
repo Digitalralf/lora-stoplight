@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include <AsyncMqttClient.hpp>
 #include <RingBuf.h>
+#include <ArduinoJson.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 #include "SSD1306.h"
@@ -33,15 +34,21 @@ typedef enum
   FLICKER
 } messageType_e;
 
+typedef enum
+{
+  ON,
+  OFF
+} state_e;
+
 typedef struct
 {
-  bool red = 0;
-  bool yellow = 0;
-  bool green = 0;
+  bool red = false;
+  bool yellow = false;
+  bool green = false;
 }colorData_t;
 typedef struct
 {
-  bool toggle = false;
+  state_e state = OFF;
   messageType_e mode = AUTOMATIC;
   colorData_t color;
 }mqttMessage_t;
@@ -86,9 +93,7 @@ void onMqttConnect(bool sessionPresent) {
   Serial.println("Connected to MQTT.");
   Serial.print("Session present: ");
   Serial.println(sessionPresent);
-  uint16_t packetIdSub = mqttClient.subscribe("stoplight/switch", 0);
-  uint16_t packetIdSub2 = mqttClient.subscribe("stoplight/rgb/set", 0);
-  uint16_t packetIdSub3 = mqttClient.subscribe("stoplight/effect/set", 0);
+  uint16_t packetIdSub = mqttClient.subscribe("stoplight/status", 0);
   Serial.print("Subscribing at QoS 0, packetId: ");
   Serial.println(packetIdSub);
 }
@@ -115,7 +120,8 @@ void onMqttUnsubscribe(uint16_t packetId) {
   Serial.println(packetId);
 }
 
-void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
+void onMqttMessage(String topic, String payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) 
+{
   Serial.println("Publish received.");
   Serial.print("  topic: ");
   Serial.println(topic);
@@ -133,40 +139,44 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   Serial.println(total);
   Serial.print("  payload: ");
   Serial.println(payload);
-
+  
+  DynamicJsonDocument doc(100);
+  deserializeJson(doc, payload);
   mqttMessage_t inComingMessage;
-  String payloadFormat(payload);
-  // for(int i = 0; i++; i < len)
-  // {
-  //   payloadFormat +=  payload[i];
-  // }
-  Serial.println(payloadFormat);
-
-  if(payloadFormat == "TOGGLE")
+  if(doc["state"] == "on")
   {
-    Serial.println("Found Toggle");
-    inComingMessage.toggle = true;
-    mqttMessageBuffer.push(inComingMessage);
+    Serial.println("State: ON");
+    inComingMessage.state = ON;
   }
-  if(payloadFormat == "Manual")
+  if(doc["state"] == "off")
   {
-    Serial.println("Found Manual");
+    Serial.println("State: OFF");
+    inComingMessage.state = OFF;
+  }
+  if(doc["mode"] == "Manual")
+  {
+    Serial.println("Mode: MANUAL");
     inComingMessage.mode = MANUAL;
-    mqttMessageBuffer.push(inComingMessage);
   }
-  if(payloadFormat == "Automatic")
+  if(doc["mode"] == "Flicker")
   {
-    Serial.println("Found Automatic");
-    inComingMessage.mode = AUTOMATIC;
-    mqttMessageBuffer.push(inComingMessage);
-  }
-  if(payloadFormat == "Flicker")
-  {
-    Serial.println("Found Flicker");
+    Serial.println("Mode: Flicker");
     inComingMessage.mode = FLICKER;
-    mqttMessageBuffer.push(inComingMessage);
   }
-
+  if(doc["mode"] == "Automatic")
+  {
+    Serial.println("Mode: Automatic");
+    inComingMessage.mode = AUTOMATIC;
+  }
+  inComingMessage.color.green = doc["green"];
+  Serial.print("Green: ");
+  Serial.println(inComingMessage.color.green);
+  inComingMessage.color.red = doc["red"];
+  Serial.print("Red: ");
+  Serial.println(inComingMessage.color.red);
+  inComingMessage.color.yellow = doc["yellow"];
+  Serial.print("Yellow: ");
+  Serial.println(inComingMessage.color.yellow);
 }
 
 void onMqttPublish(uint16_t packetId) {
@@ -198,47 +208,3 @@ void setup() {
 
 void loop() {
 }
-
-
-
-
-
-
-
-
-
-// void setup() 
-// {
-//   display.init();
-//   display.flipScreenVertically();
-//   display.clear();
-//   display.setFont(ArialMT_Plain_16);
-//   display.setTextAlignment(TEXT_ALIGN_CENTER);
-//   display.drawString(display.getWidth() / 2, display.getHeight() / 2,"Starting");
-//   display.display();
-
-//   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-//   while (WiFi.status() != WL_CONNECTED) 
-//   {
-//     delay(500);
-//     display.clear();
-//     display.setFont(ArialMT_Plain_16);
-//     display.setTextAlignment(TEXT_ALIGN_CENTER);
-//     display.drawString(display.getWidth() / 2, display.getHeight() / 2,"Connecting");
-//     display.display();
-//   }
-
-//   display.clear();
-//   display.setFont(ArialMT_Plain_16);
-//   display.setTextAlignment(TEXT_ALIGN_CENTER);
-//   display.drawString(display.getWidth() / 2, display.getHeight() / 2, WiFi.localIP().toString());
-//   display.display();
-
-//   mqttClient.setCredentials(username, passwd);
-//   mqttClient.connect();
-
-// }
-
-// void loop() {
-//   // put your main code here, to run repeatedly:
-// }
