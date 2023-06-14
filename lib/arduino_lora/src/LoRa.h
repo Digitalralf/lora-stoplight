@@ -96,6 +96,9 @@ public:
 
   void dumpRegisters(Stream& out);
 
+  int getSpreadingFactor();
+  long getSignalBandwidth();
+
 private:
   void explicitHeaderMode();
   void implicitHeaderMode();
@@ -103,8 +106,7 @@ private:
   void handleDio0Rise();
   bool isTransmitting();
 
-  int getSpreadingFactor();
-  long getSignalBandwidth();
+
 
   void setLdoFlag();
 

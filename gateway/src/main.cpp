@@ -23,44 +23,21 @@
 #define CONFIG_RST  23
 #define CONFIG_DIO0 26
 
-#define LORA_FREQUENCY 868
+#define LORA_FREQUENCY 868E6
 
 #define MQTT_HOST IPAddress(192, 168, 1, 2)
 #define MQTT_PORT 1883
 
-typedef enum
-{
-  AUTOMATIC,
-  MANUAL,
-  FLICKER
-} messageType_e;
-
-typedef enum
-{
-  ON,
-  OFF
-} state_e;
-
-typedef struct
-{
-  bool red = false;
-  bool yellow = false;
-  bool green = false;
-}colorData_t;
-typedef struct
-{
-  state_e state = OFF;
-  messageType_e mode = AUTOMATIC;
-  colorData_t color;
-}mqttMessage_t;
-
-RingBuf<mqttMessage_t, 100>  mqttMessageBuffer;
+RingBuf<uint8_t, 100>  loraMessageBuffer;
 
 SSD1306Wire display(OLED_ADDRESS, OLED_SDA, OLED_SCL);
 WiFiClient espClient;
 AsyncMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t wifiReconnectTimer;
+TimerHandle_t LoraTransmitTimer;
+
+void TransmitLora();
 
 void connectToWifi() {
   Serial.println("Connecting to Wi-Fi...");
@@ -97,11 +74,12 @@ void onMqttConnect(bool sessionPresent) {
   uint16_t packetIdSub = mqttClient.subscribe("stoplight/status", 0);
   Serial.print("Subscribing at QoS 0, packetId: ");
   Serial.println(packetIdSub);
+  xTimerStart(LoraTransmitTimer, 0);
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   Serial.println("Disconnected from MQTT.");
-
+  xTimerStop(LoraTransmitTimer, 0);
   if (WiFi.isConnected()) {
     xTimerStart(mqttReconnectTimer, 0);
   }
@@ -123,28 +101,13 @@ void onMqttUnsubscribe(uint16_t packetId) {
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) 
 {
-  Serial.println("Publish received.");
-  Serial.print("  topic: ");
-  Serial.println(topic);
-  Serial.print("  qos: ");
-  Serial.println(properties.qos);
-  Serial.print("  dup: ");
-  Serial.println(properties.dup);
-  Serial.print("  retain: ");
-  Serial.println(properties.retain);
-  Serial.print("  len: ");
-  Serial.println(len);
-  Serial.print("  index: ");
-  Serial.println(index);
-  Serial.print("  total: ");
-  Serial.println(total);
-  Serial.print("  payload: ");
   String payloadClean(payload, len);
   Serial.println(payloadClean);
   
   uint8_t DataByte = ParseMqttToByte(payloadClean);
   Serial.print("DataByte: ");
   Serial.println(DataByte,BIN);
+  loraMessageBuffer.push(DataByte);
 }
 
 void onMqttPublish(uint16_t packetId) {
@@ -158,8 +121,18 @@ void setup() {
   Serial.println();
   Serial.println();
 
+  SPI.begin(CONFIG_CLK, CONFIG_MISO, CONFIG_MOSI, CONFIG_NSS);
+    LoRa.setPins(CONFIG_NSS, CONFIG_RST, CONFIG_DIO0);
+    if (!LoRa.begin(LORA_FREQUENCY)) 
+    {
+        Serial.println("Starting LoRa failed!");
+        while (1);
+    }
+
   mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
   wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
+  LoraTransmitTimer  = xTimerCreate("loraTimer", pdMS_TO_TICKS(2000), pdTRUE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(TransmitLora));
+
 
   WiFi.onEvent(WiFiEvent);
 
@@ -172,7 +145,22 @@ void setup() {
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 
   connectToWifi();
+
 }
 
-void loop() {
+void loop() 
+{
+
+}
+
+void TransmitLora()
+{
+  uint8_t dataToSend = 0;
+  if(loraMessageBuffer.pop(dataToSend))
+  {
+    Serial.println("Sending lora messsage");
+    LoRa.beginPacket();
+    LoRa.write(dataToSend);
+    LoRa.endPacket();
+  }
 }
