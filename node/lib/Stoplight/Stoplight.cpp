@@ -24,16 +24,9 @@ static stopLightData_t stopLightData;
 
 static void InitHardware();
 static void SetStopLightHardware(bool red, bool yellow, bool green);
-//static bool CheckFridgeIsOpen();
-//static bool CheckFridgeIsClosed();
 static void AttachInterruptFridgeOpening();
 static void AttachInterruptFridgeClosing();
 static void DeAttachInterrupt();
-
-
-
-
-static void OnFridgePinChange();
 
 static void InitFlickerTimer();
 static void StartFlickerTimer();
@@ -73,6 +66,10 @@ void SetStopLightAutomatic()
 {
     StopFlickerTimer();
     StopRedTimer();
+    stopLightData._greenOn = false;
+    stopLightData._yellowOn = false;
+    stopLightData._redOn = true;
+    SetStopLightHardware(stopLightData._redOn,stopLightData._yellowOn,stopLightData._greenOn);
     stopLightData._mode = AUTOMATIC;
 }
 void SetStopLightColors(bool red, bool yellow, bool green)
