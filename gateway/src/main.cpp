@@ -9,6 +9,7 @@
 #include "freertos/timers.h"
 #include "SSD1306.h"
 #include "LoRa.h"
+#include "mqttLoraParser.h"
 
 #define OLED_ADDRESS    0x3C
 #define OLED_SDA    21
@@ -120,7 +121,7 @@ void onMqttUnsubscribe(uint16_t packetId) {
   Serial.println(packetId);
 }
 
-void onMqttMessage(String topic, String payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) 
+void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) 
 {
   Serial.println("Publish received.");
   Serial.print("  topic: ");
@@ -138,45 +139,12 @@ void onMqttMessage(String topic, String payload, AsyncMqttClientMessagePropertie
   Serial.print("  total: ");
   Serial.println(total);
   Serial.print("  payload: ");
-  Serial.println(payload);
+  String payloadClean(payload, len);
+  Serial.println(payloadClean);
   
-  DynamicJsonDocument doc(100);
-  deserializeJson(doc, payload);
-  mqttMessage_t inComingMessage;
-  if(doc["state"] == "on")
-  {
-    Serial.println("State: ON");
-    inComingMessage.state = ON;
-  }
-  if(doc["state"] == "off")
-  {
-    Serial.println("State: OFF");
-    inComingMessage.state = OFF;
-  }
-  if(doc["mode"] == "Manual")
-  {
-    Serial.println("Mode: MANUAL");
-    inComingMessage.mode = MANUAL;
-  }
-  if(doc["mode"] == "Flicker")
-  {
-    Serial.println("Mode: Flicker");
-    inComingMessage.mode = FLICKER;
-  }
-  if(doc["mode"] == "Automatic")
-  {
-    Serial.println("Mode: Automatic");
-    inComingMessage.mode = AUTOMATIC;
-  }
-  inComingMessage.color.green = doc["green"];
-  Serial.print("Green: ");
-  Serial.println(inComingMessage.color.green);
-  inComingMessage.color.red = doc["red"];
-  Serial.print("Red: ");
-  Serial.println(inComingMessage.color.red);
-  inComingMessage.color.yellow = doc["yellow"];
-  Serial.print("Yellow: ");
-  Serial.println(inComingMessage.color.yellow);
+  uint8_t DataByte = ParseMqttToByte(payloadClean);
+  Serial.print("DataByte: ");
+  Serial.println(DataByte,BIN);
 }
 
 void onMqttPublish(uint16_t packetId) {
