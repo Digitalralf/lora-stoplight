@@ -29,6 +29,7 @@
 #define MQTT_PORT 1883
 
 RingBuf<uint8_t, 100>  loraMessageBuffer;
+RingBuf<int, 10> loraRSSI;
 
 SSD1306Wire display(OLED_ADDRESS, OLED_SDA, OLED_SCL);
 WiFiClient espClient;
@@ -46,7 +47,7 @@ void connectToWifi() {
 
 void connectToMqtt() {
   Serial.println("Connecting to MQTT...");
-  mqttClient.setCredentials(username,passwd);
+  mqttClient.setCredentials(username,password);
   mqttClient.connect();
 }
 
@@ -150,7 +151,11 @@ void setup() {
 
 void loop() 
 {
+  int rssi = 0;
+  if(loraRSSI.pop(rssi))
+  {
 
+  }
 }
 
 void TransmitLora()
@@ -162,5 +167,6 @@ void TransmitLora()
     LoRa.beginPacket();
     LoRa.write(dataToSend);
     LoRa.endPacket();
+    loraRSSI.push(LoRa.rssi());
   }
 }
