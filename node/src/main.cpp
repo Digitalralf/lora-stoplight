@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <atomic>
 #include "freertos/timers.h"
+#include "SSD1306.h"
 #include "LoRa.h"
 #include "Stoplight.h"
 #include "LoraMessageParser.h"
@@ -18,17 +19,27 @@
 #define CONFIG_DIO0 26
 
 #define LORA_FREQUENCY 868E6
-
+SSD1306Wire display(OLED_ADDRESS, OLED_SDA, OLED_SCL);
 static const uint8_t greenPin = 12;//io34
 static const uint8_t yellowPin = 13;//io14
 static const uint8_t redPin = 15;//io15
 static const uint8_t fridgePin = 2; //io2
+static const uint16_t transmitIntervalMs = 2000;
+static unsigned long lastSendTime = 0;
+static void PrintToScreen(String string);
+static void CheckForPacket();
+static void TransmitFridgeOpened();
+
 
 void setup() 
 {
   Serial.begin(115200);
   StartStoplight(greenPin,yellowPin,redPin,fridgePin);
-  //SetStopLightFlicker(true, true ,true, 500);
+  display.init();
+  display.flipScreenVertically();
+  display.clear();
+  display.setFont(ArialMT_Plain_16);
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
   SPI.begin(CONFIG_CLK, CONFIG_MISO, CONFIG_MOSI, CONFIG_NSS);
     LoRa.setPins(CONFIG_NSS, CONFIG_RST, CONFIG_DIO0);
     if (!LoRa.begin(LORA_FREQUENCY)) {
@@ -40,18 +51,29 @@ void setup()
   Serial.print("Current Bandwith");
   Serial.println(LoRa.getSignalBandwidth());
   Serial.println("Starting Successful");
+  PrintToScreen("Init Succesfull");
 }
 
 void loop() 
 {
-  unpackedMessage_t unpackedMessage;
+  if (millis() - lastSendTime > transmitIntervalMs) {
+    TransmitFridgeOpened();
+    lastSendTime = millis();            // timestamp the message
+  }
+  CheckForPacket();
+}
+
+void CheckForPacket()
+{
   if (LoRa.parsePacket()) 
   {
+    unpackedMessage_t unpackedMessage;
     uint8_t message = 0;
     while (LoRa.available()) 
     {
       message = (uint8_t)LoRa.read();
       Serial.println(message, BIN);
+      PrintToScreen(String(LoRa.packetRssi()));
       unpackedMessage = ParseLoraMessage(message);
     }
     Serial.print("State: ");
@@ -88,4 +110,23 @@ void loop()
     Serial.print("Yellow: ");
     Serial.println(unpackedMessage.color.yellow);
   }
+}
+
+void TransmitFridgeOpened()
+{
+  static uint8_t ping = 0b10101010;
+  if(CheckIfFridgeOpened())
+  {
+    Serial.println(ping, BIN);
+    LoRa.beginPacket();
+    LoRa.write(ping);
+    LoRa.endPacket();
+  }
+}
+
+void PrintToScreen(String string)
+{
+  display.clear();
+  display.drawString(display.getWidth() / 2, display.getHeight() / 2, string.c_str());
+  display.display();
 }

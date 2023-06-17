@@ -28,17 +28,22 @@
 #define MQTT_HOST IPAddress(192, 168, 1, 2)
 #define MQTT_PORT 1883
 
-RingBuf<uint8_t, 100>  loraMessageBuffer;
-RingBuf<int, 10> loraRSSI;
+static const uint16_t transmitIntervalMs = 2000;
+static unsigned long lastSendTime = 0;
+static RingBuf<uint8_t, 100>  loraMessageBuffer;
+static RingBuf<int, 10> loraRSSI;
 
 SSD1306Wire display(OLED_ADDRESS, OLED_SDA, OLED_SCL);
 WiFiClient espClient;
 AsyncMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t wifiReconnectTimer;
-TimerHandle_t LoraTransmitTimer;
+//TimerHandle_t LoraTransmitTimer;
 
-void TransmitLora();
+
+static void TransmitLora();
+static void CheckForPacket();
+static void PrintToScreen(String string);
 
 void connectToWifi() {
   Serial.println("Connecting to Wi-Fi...");
@@ -58,6 +63,7 @@ void WiFiEvent(WiFiEvent_t event) {
         Serial.println("WiFi connected");
         Serial.println("IP address: ");
         Serial.println(WiFi.localIP());
+        PrintToScreen("Wifi Connected");
         connectToMqtt();
         break;
     case SYSTEM_EVENT_STA_DISCONNECTED:
@@ -75,12 +81,13 @@ void onMqttConnect(bool sessionPresent) {
   uint16_t packetIdSub = mqttClient.subscribe("stoplight/status", 0);
   Serial.print("Subscribing at QoS 0, packetId: ");
   Serial.println(packetIdSub);
-  xTimerStart(LoraTransmitTimer, 0);
+  PrintToScreen("MQTT connected");
+  //xTimerStart(LoraTransmitTimer, 0);
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   Serial.println("Disconnected from MQTT.");
-  xTimerStop(LoraTransmitTimer, 0);
+  //xTimerStop(LoraTransmitTimer, 0);
   if (WiFi.isConnected()) {
     xTimerStart(mqttReconnectTimer, 0);
   }
@@ -121,6 +128,11 @@ void setup() {
   Serial.begin(115200);
   Serial.println();
   Serial.println();
+  display.init();
+  display.flipScreenVertically();
+  display.clear();
+  display.setFont(ArialMT_Plain_16);
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
 
   SPI.begin(CONFIG_CLK, CONFIG_MISO, CONFIG_MOSI, CONFIG_NSS);
     LoRa.setPins(CONFIG_NSS, CONFIG_RST, CONFIG_DIO0);
@@ -132,7 +144,7 @@ void setup() {
 
   mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
   wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
-  LoraTransmitTimer  = xTimerCreate("loraTimer", pdMS_TO_TICKS(2000), pdTRUE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(TransmitLora));
+  //LoraTransmitTimer  = xTimerCreate("loraTimer", pdMS_TO_TICKS(2000), pdTRUE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(TransmitLora));
 
 
   WiFi.onEvent(WiFiEvent);
@@ -146,16 +158,28 @@ void setup() {
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 
   connectToWifi();
+  Serial.print("Current Spreading Factor: ");
+  Serial.println(LoRa.getSpreadingFactor());
+  Serial.print("Current Bandwith");
+  Serial.println(LoRa.getSignalBandwidth());
+  Serial.println("Starting Successful");
+  PrintToScreen("Init Succesfull");
 
 }
 
 void loop() 
 {
-  int rssi = 0;
-  if(loraRSSI.pop(rssi))
-  {
-
+  if (millis() - lastSendTime > transmitIntervalMs) {
+    TransmitLora();
+    lastSendTime = millis();            // timestamp the message
   }
+  CheckForPacket();
+  // int rssi = 0;
+  // if(loraRSSI.pop(rssi))
+  // {
+  //   String rssiString = String(rssi);
+  //   PrintToScreen(rssiString);
+  // }
 }
 
 void TransmitLora()
@@ -167,6 +191,32 @@ void TransmitLora()
     LoRa.beginPacket();
     LoRa.write(dataToSend);
     LoRa.endPacket();
-    loraRSSI.push(LoRa.rssi());
+    PrintToScreen(String(LoRa.packetRssi()));
+    //loraRSSI.push(LoRa.rssi());
   }
+}
+void CheckForPacket()
+{
+  if (LoRa.parsePacket()) 
+  {
+    Serial.println("parsing packet");
+    static const uint8_t expectedMessage = 0b10101010;
+    static uint8_t message = 0;
+    while (LoRa.available()) 
+    {
+      message = (uint8_t)LoRa.read();
+      Serial.println(message, BIN);
+      PrintToScreen(String(LoRa.packetRssi()));
+      if(message == expectedMessage)
+      {
+        mqttClient.publish("koelkast/status",0,false,"ping",10);
+      }
+    }
+  }
+}
+void PrintToScreen(String string)
+{
+  display.clear();
+  display.drawString(display.getWidth() / 2, display.getHeight() / 2, string.c_str());
+  display.display();
 }

@@ -16,5 +16,6 @@ void StartStoplight(uint8_t greenPin, uint8_t yellowPin, uint8_t redPin, uint8_t
 void SetStopLightAutomatic();
 void SetStopLightColors(bool red, bool yellow, bool green);
 void SetStopLightFlicker(bool red, bool yellow, bool green, uint16_t intervalMs);
+bool CheckIfFridgeOpened();
 
 #endif //STOPLIGHT_H

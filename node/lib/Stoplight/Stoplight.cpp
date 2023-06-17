@@ -1,4 +1,5 @@
 #include "Stoplight.h"
+#include <RingBuf.h>
 typedef struct
 {
     stopLightMode_e _mode = AUTOMATIC;
@@ -21,12 +22,14 @@ typedef struct
 } stopLightData_t;
 
 static stopLightData_t stopLightData;
+static RingBuf<bool, 100> FridgeOpened;
 
 static void InitHardware();
 static void SetStopLightHardware(bool red, bool yellow, bool green);
 static void AttachInterruptFridgeOpening();
 static void AttachInterruptFridgeClosing();
 static void DeAttachInterrupt();
+
 
 static void InitFlickerTimer();
 static void StartFlickerTimer();
@@ -59,6 +62,7 @@ void StartStoplight(uint8_t greenPin, uint8_t yellowPin, uint8_t redPin, uint8_t
     stopLightData._fridgePin = fridgePin;
 
     InitHardware();
+    SetStopLightAutomatic();
     
 }
 
@@ -121,19 +125,19 @@ void SetStopLightHardware(bool red, bool yellow, bool green)
 }
 void InitFlickerTimer()
 {
-    stopLightData._flickerTimer = xTimerCreate("redTimer", pdMS_TO_TICKS(stopLightData._flickerTimeMs),pdTRUE,(void *)0,OnFlickerTimeout);
+    stopLightData._flickerTimer = xTimerCreate("FlickerTimer", pdMS_TO_TICKS(stopLightData._flickerTimeMs),pdTRUE,(void *)0,OnFlickerTimeout);
 }
 void InitGreenTimer()
 {
-    stopLightData._greenTimer = xTimerCreate("redTimer", pdMS_TO_TICKS(20),pdFALSE,(void *)0,OnGreenTimerTimeout);
+    stopLightData._greenTimer = xTimerCreate("GreenTimer", pdMS_TO_TICKS(20),pdFALSE,(void *)0,OnGreenTimerTimeout);
 }
 void InitYellowTimer()
 {
-    stopLightData._yellowTimer = xTimerCreate("redTimer", pdMS_TO_TICKS(20),pdFALSE,(void *)0,OnYellowTimerTimeout);
+    stopLightData._yellowTimer = xTimerCreate("YellowTimer", pdMS_TO_TICKS(20),pdFALSE,(void *)0,OnYellowTimerTimeout);
 }
 void InitRedTimer()
 {
-    stopLightData._redTimer = xTimerCreate("redTimer", pdMS_TO_TICKS(stopLightData._timeUntilRedLightOnMs),pdFALSE,(void *)0,OnRedTimerTimeout);
+    stopLightData._redTimer = xTimerCreate("RedTimer", pdMS_TO_TICKS(stopLightData._timeUntilRedLightOnMs),pdFALSE,(void *)0,OnRedTimerTimeout);
 }
 
 void AttachInterruptFridgeOpening()
@@ -151,6 +155,11 @@ void DeAttachInterrupt()
     detachInterrupt(digitalPinToInterrupt(stopLightData._fridgePin));
 }
 
+bool CheckIfFridgeOpened()
+{
+    bool temp = false;
+    return FridgeOpened.pop(temp);
+}
 
 void StartGreenTimer()
 {
@@ -159,14 +168,15 @@ void StartGreenTimer()
 }
 void OnGreenTimerTimeout(TimerHandle_t /*dummy*/)
 {
-    StopRedTimer();
     if(digitalRead(stopLightData._fridgePin) == HIGH)
     {
+        StopRedTimer();
+        FridgeOpened.push(true);
         if(stopLightData._mode == AUTOMATIC)
         {
             SetStopLightHardware(false, false, true);
+            AttachInterruptFridgeClosing();
         }
-        AttachInterruptFridgeClosing();
     }
     else
     {
@@ -220,6 +230,7 @@ void StopFlickerTimer()
 
 void OnRedTimerTimeout(TimerHandle_t /*dummy*/)
 {
+    AttachInterruptFridgeOpening();
     SetStopLightHardware(true, false, false);
 }
 
